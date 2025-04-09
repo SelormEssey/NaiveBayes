@@ -57,7 +57,16 @@ def predict_email(text):
 # Example test email
 if __name__ == "__main__":
     sample_email = """
-    Dear user, Your account has been compromised. Click here immediately to reset your password and avoid suspension.
+    
+We have detected unusual activity on your account and need to verify your identity to ensure your account security.
+
+Please log in immediately by clicking the secure link below:
+http://secure-verify-update.com/login
+
+Failure to verify your account within 24 hours will result in permanent suspension.
+
+Thank you for your prompt attention to this matter.
+
     """
     result = predict_email(sample_email)
     if result == 1:
