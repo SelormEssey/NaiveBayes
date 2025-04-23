@@ -1,75 +1,104 @@
 import pandas as pd
-import string
+import numpy as np
 import re
-
+import string
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    roc_curve,
+    auc,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
+import joblib
+import seaborn as sns
 
-# Clean email body text
-def clean_text(text):
-    text = text.lower()
-    text = re.sub(r"http\S+", "", text)  # remove URLs
-    text = re.sub(r"\S+@\S+", "", text)  # remove emails
-    text = re.sub(r"\d+", "", text)      # remove digits
-    text = text.translate(str.maketrans("", "", string.punctuation))  # remove punctuation
-    text = re.sub(r"\s+", " ", text).strip()  # normalize whitespace
-    return text
-
-# Load dataset
+# Load the dataset
 data = pd.read_csv("final_combined_dataset.csv")
 
-# Rename target column for model clarity
-data = data.rename(columns={"body": "text", "label": "label"})
+# Combine multiple text fields (e.g., subject, body, sender, receiver, urls)
+def combine_columns(row):
+    fields = ['subject', 'body', 'sender', 'receiver', 'urls']
+    return ' '.join(str(row[field]) for field in fields if pd.notnull(row[field]))
 
-# Preprocess text
-data["text"] = data["text"].astype(str).apply(clean_text)
+data['combined_text'] = data.apply(combine_columns, axis=1)
 
-# Split into features and labels
-X = data["text"]
-y = data["label"]
+# Text cleaning function
+def clean_text(text):
+    text = str(text).lower()
+    text = re.sub(f"[{re.escape(string.punctuation)}]", " ", text)
+    text = re.sub(r"\d+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
-# Vectorize text
-vectorizer = TfidfVectorizer(stop_words="english", max_df=0.95)
-X_vec = vectorizer.fit_transform(X)
+data['cleaned_text'] = data['combined_text'].apply(clean_text)
 
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X_vec, y, test_size=0.2, random_state=42)
+# Split dataset: 80% train, 20% test
+X_train, X_test, y_train, y_test = train_test_split(
+    data['cleaned_text'], data['label'], test_size=0.3, random_state=42
+)
 
-# Train Naive Bayes model
+# TF-IDF Vectorization
+vectorizer = TfidfVectorizer(stop_words='english')
+X_train_vec = vectorizer.fit_transform(X_train)
+X_test_vec = vectorizer.transform(X_test)
+
+# Naive Bayes training
 model = MultinomialNB()
-model.fit(X_train, y_train)
+model.fit(X_train_vec, y_train)
 
-# Evaluate model
-y_pred = model.predict(X_test)
-print("✅ Model Evaluation:")
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print("\nClassification Report:\n", classification_report(y_test, y_pred))
+# Save model and vectorizer
+joblib.dump(model, "phishing_model.pkl")
+joblib.dump(vectorizer, "tfidf_vectorizer.pkl")
 
-# Predict new email
-def predict_email(text):
-    cleaned = clean_text(text)
-    vectorized = vectorizer.transform([cleaned])
-    prediction = model.predict(vectorized)[0]
-    return prediction
+# Predict and evaluate
+y_pred = model.predict(X_test_vec)
+y_proba = model.predict_proba(X_test_vec)[:, 1]
 
-# Example test email
-if __name__ == "__main__":
-    sample_email = """
-    
-We have detected unusual activity on your account and need to verify your identity to ensure your account security.
+# Metrics
+acc = accuracy_score(y_test, y_pred)
+prec = precision_score(y_test, y_pred)
+rec = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
 
-Please log in immediately by clicking the secure link below:
-http://secure-verify-update.com/login
+print("\n🔍 Classification Report:")
+print(classification_report(y_test, y_pred))
 
-Failure to verify your account within 24 hours will result in permanent suspension.
+# Confusion Matrix
+conf_matrix = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(6, 5))
+sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["Predicted Legit", "Predicted Phish"],
+            yticklabels=["Actual Legit", "Actual Phish"])
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.tight_layout()
+plt.show()
 
-Thank you for your prompt attention to this matter.
+# ROC Curve
+fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+roc_auc = auc(fpr, tpr)
 
-    """
-    result = predict_email(sample_email)
-    if result == 1:
-        print("🚨 Phishing Email detected!")
-    else:
-        print("✅ Legitimate Email.")
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve")
+plt.legend(loc="lower right")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+print(f"\n📊 Accuracy:  {acc:.2f}")
+print(f"📌 Precision: {prec:.2f}")
+print(f"🎯 Recall:    {rec:.2f}")
+print(f"🏁 F1 Score:  {f1:.2f}")
+print(f"📈 AUC Score: {roc_auc:.2f}")
