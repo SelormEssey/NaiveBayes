@@ -39,7 +39,7 @@ def clean_text(text):
 
 data['cleaned_text'] = data['combined_text'].apply(clean_text)
 
-# Split dataset: 80% train, 20% test
+# Split dataset: 70% train, 30% test
 X_train, X_test, y_train, y_test = train_test_split(
     data['cleaned_text'], data['label'], test_size=0.3, random_state=42
 )
